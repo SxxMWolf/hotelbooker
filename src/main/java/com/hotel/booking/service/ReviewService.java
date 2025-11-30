@@ -35,6 +35,15 @@ public class ReviewService {
         return reviewRepository.findById(reviewId);
     }
     
+    public List<Review> getReviewsByBookingId(Long bookingId) {
+        return reviewRepository.findByBooking_BookingId(bookingId);
+    }
+    
+    public boolean hasReviewForBooking(Long bookingId, Long userId) {
+        return reviewRepository.findByBooking_BookingId(bookingId).stream()
+                .anyMatch(r -> r.getUser().getUserId().equals(userId));
+    }
+    
     @Transactional
     public Review createReview(Booking booking, User user, Room room, 
                               Integer rating, String comment) {

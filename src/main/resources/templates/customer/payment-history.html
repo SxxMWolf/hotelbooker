@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="~{layout :: layout(~{::content}, ~{})}">
+<body>
+    <div th:fragment="content">
+        <h2>결제 내역</h2>
+        
+        <div class="payment-history-container">
+            <a th:href="@{/customer/mypage}" class="btn btn-secondary" style="margin-bottom: 20px;">← 마이페이지로 돌아가기</a>
+            
+            <div th:if="${paymentHistory.isEmpty()}" class="empty-state">
+                <p>결제 내역이 없습니다.</p>
+            </div>
+            
+            <div th:if="${!paymentHistory.isEmpty()}" class="payment-list">
+                <div th:each="paymentInfo : ${paymentHistory}" class="payment-card">
+                    <div class="payment-header">
+                        <h3 th:text="${paymentInfo.booking.room.roomName}"></h3>
+                        <span class="payment-status" th:classappend="${'status-' + paymentInfo.payment.paymentStatus.name().toLowerCase()}">
+                            <span th:switch="${paymentInfo.payment.paymentStatus.name()}">
+                                <span th:case="'COMPLETED'">결제 완료</span>
+                                <span th:case="'PENDING'">결제 대기</span>
+                                <span th:case="'FAILED'">결제 실패</span>
+                                <span th:case="'REFUNDED'">환불됨</span>
+                            </span>
+                        </span>
+                    </div>
+                    
+                    <div class="payment-details">
+                        <div class="detail-row">
+                            <span class="label">예약 번호:</span>
+                            <span class="value" th:text="${paymentInfo.payment.transactionId}"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">체크인:</span>
+                            <span class="value" th:text="${#temporals.format(paymentInfo.booking.checkInDate, 'yyyy-MM-dd')}"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">체크아웃:</span>
+                            <span class="value" th:text="${#temporals.format(paymentInfo.booking.checkOutDate, 'yyyy-MM-dd')}"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">객실 가격:</span>
+                            <span class="value" th:text="'₩' + ${#numbers.formatDecimal(paymentInfo.booking.totalPrice, 0, 'COMMA', 0, 'POINT')}"></span>
+                        </div>
+                        <div class="detail-row" th:if="${paymentInfo.payment.discountAmount != null && paymentInfo.payment.discountAmount.compareTo(java.math.BigDecimal.ZERO) > 0}">
+                            <span class="label">할인 금액:</span>
+                            <span class="value discount" th:text="'-₩' + ${#numbers.formatDecimal(paymentInfo.payment.discountAmount, 0, 'COMMA', 0, 'POINT')}"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">실제 결제 금액:</span>
+                            <span class="value total-amount" th:text="'₩' + ${#numbers.formatDecimal(paymentInfo.payment.amount, 0, 'COMMA', 0, 'POINT')}"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">결제 방법:</span>
+                            <span class="value" th:switch="${paymentInfo.payment.paymentMethod.name()}">
+                                <span th:case="'CARD'">카드</span>
+                                <span th:case="'SIMPLE_PAY'">간편결제</span>
+                            </span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">결제 일시:</span>
+                            <span class="value" th:text="${#temporals.format(paymentInfo.payment.paymentDate, 'yyyy-MM-dd HH:mm')}"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">영수증 번호:</span>
+                            <span class="value" th:text="${paymentInfo.payment.transactionId}"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="payment-actions">
+                        <button type="button" class="btn btn-info" onclick="printReceipt(this)">영수증 출력</button>
+                        <a th:href="@{/customer/bookings/{id}(id=${paymentInfo.booking.bookingId})}" class="btn btn-secondary">예약 상세</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        .payment-history-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .payment-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .payment-card {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .payment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .payment-header h3 {
+            margin: 0;
+            color: #007bff;
+        }
+        
+        .payment-status {
+            padding: 6px 15px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .payment-status.status-completed {
+            background: #28a745;
+            color: white;
+        }
+        
+        .payment-status.status-pending {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .payment-status.status-failed {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .payment-status.status-refunded {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .payment-details {
+            margin-bottom: 20px;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-row .label {
+            font-weight: 500;
+            color: #666;
+        }
+        
+        .detail-row .value {
+            color: #333;
+        }
+        
+        .detail-row .value.discount {
+            color: #28a745;
+        }
+        
+        .detail-row .value.total-amount {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        
+        .payment-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #999;
+        }
+    </style>
+    
+    <script>
+        function printReceipt(button) {
+            const card = button.closest('.payment-card');
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                    <head>
+                        <title>영수증</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; padding: 20px; }
+                            h2 { color: #007bff; }
+                            .receipt-details { margin: 20px 0; }
+                            .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+                            .total { font-size: 18px; font-weight: bold; margin-top: 20px; }
+                        </style>
+                    </head>
+                    <body>
+                        <h2>호텔 예약 영수증</h2>
+                        ${card.innerHTML}
+                    </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+        }
+    </script>
+</body>
+</html>
+

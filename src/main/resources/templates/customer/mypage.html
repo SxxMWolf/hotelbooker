@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="~{layout :: layout(~{::content}, ~{})}">
+<body>
+    <div th:fragment="content">
+        <h2>마이페이지</h2>
+        
+        <div class="mypage-container">
+            <!-- 현재 예약 섹션 (가장 먼저 보이는 화면) -->
+            <section class="current-bookings-section">
+                <h3>현재 예약된 객실</h3>
+                <div th:if="${currentBookings.isEmpty()}" class="empty-state">
+                    <p>현재 예약된 객실이 없습니다.</p>
+                </div>
+                <div th:if="${!currentBookings.isEmpty()}" class="bookings-summary">
+                    <div th:each="booking : ${currentBookings}" class="booking-summary-card">
+                        <div class="booking-header">
+                            <h4 th:text="${booking.room.roomName}"></h4>
+                            <span class="status-badge" th:classappend="${'status-' + booking.status.name().toLowerCase()}">
+                                <span th:switch="${booking.status.name()}">
+                                    <span th:case="'PENDING'">대기중</span>
+                                    <span th:case="'CONFIRMED'">확정</span>
+                                    <span th:case="'CHECKED_IN'">체크인 완료</span>
+                                    <span th:case="'CHECKED_OUT'">체크아웃 완료</span>
+                                    <span th:case="'CANCELLED'">취소됨</span>
+                                </span>
+                            </span>
+                        </div>
+                        <div class="booking-details-grid">
+                            <div class="detail-item">
+                                <span class="label">체크인</span>
+                                <span class="value" th:text="${#temporals.format(booking.checkInDate, 'yyyy-MM-dd')}"></span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">체크아웃</span>
+                                <span class="value" th:text="${#temporals.format(booking.checkOutDate, 'yyyy-MM-dd')}"></span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">객실 종류</span>
+                                <span class="value" th:text="${booking.room.roomType.name()}"></span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">결제 여부</span>
+                                <span class="value" th:if="${paymentMap != null && paymentMap.containsKey(booking.bookingId)}">
+                                    <span th:switch="${paymentMap[booking.bookingId].paymentStatus.name()}">
+                                        <span th:case="'COMPLETED'" class="payment-completed">결제 완료</span>
+                                        <span th:case="'PENDING'" class="payment-pending">결제 대기</span>
+                                        <span th:case="'FAILED'" class="payment-failed">결제 실패</span>
+                                        <span th:case="'REFUNDED'" class="payment-refunded">환불됨</span>
+                                    </span>
+                                </span>
+                                <span class="value payment-none" th:if="${paymentMap == null || !paymentMap.containsKey(booking.bookingId)}">미결제</span>
+                            </div>
+                        </div>
+                        <div class="booking-actions">
+                            <a th:href="@{/customer/bookings/{id}(id=${booking.bookingId})}" class="btn btn-secondary">예약 상세</a>
+                            <a th:if="${paymentMap != null && paymentMap.containsKey(booking.bookingId)}" 
+                               th:href="@{/customer/mypage/payment-history}" class="btn btn-info">결제 내역</a>
+                            <form th:if="${booking.status.name() != 'CANCELLED' && booking.status.name() != 'CHECKED_OUT'}" 
+                                  th:action="@{/customer/bookings/{id}/cancel(id=${booking.bookingId})}" 
+                                  method="post" style="display:inline;">
+                                <button type="submit" class="btn btn-danger" 
+                                        onclick="return confirm('정말 예약을 취소하시겠습니까?')">예약 취소</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 지난 예약 이력 섹션 -->
+            <section class="past-bookings-section">
+                <h3>지난 예약 기록</h3>
+                <div th:if="${pastBookings.isEmpty()}" class="empty-state">
+                    <p>지난 예약 기록이 없습니다.</p>
+                </div>
+                <div th:if="${!pastBookings.isEmpty()}" class="bookings-list">
+                    <div th:each="booking : ${pastBookings}" class="booking-card past-booking">
+                        <div class="booking-info">
+                            <h4 th:text="${booking.room.roomName}"></h4>
+                            <div class="booking-details">
+                                <p><strong>체크인:</strong> <span th:text="${#temporals.format(booking.checkInDate, 'yyyy-MM-dd')}"></span></p>
+                                <p><strong>체크아웃:</strong> <span th:text="${#temporals.format(booking.checkOutDate, 'yyyy-MM-dd')}"></span></p>
+                                <p><strong>객실 종류:</strong> <span th:text="${booking.room.roomType.name()}"></span></p>
+                                <p><strong>상태:</strong> 
+                                    <span th:switch="${booking.status.name()}">
+                                        <span th:case="'PENDING'">대기중</span>
+                                        <span th:case="'CONFIRMED'">확정</span>
+                                        <span th:case="'CHECKED_IN'">체크인 완료</span>
+                                        <span th:case="'CHECKED_OUT'">체크아웃 완료</span>
+                                        <span th:case="'CANCELLED'">취소됨</span>
+                                    </span>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="booking-actions">
+                            <a th:href="@{/customer/bookings/{id}(id=${booking.bookingId})}" class="btn btn-secondary">상세보기</a>
+                            <a th:if="${booking.status.name() == 'CHECKED_OUT' && (reviewMap == null || !reviewMap.containsKey(booking.bookingId) || !reviewMap[booking.bookingId])}" 
+                               th:href="@{/customer/bookings/{id}/review(id=${booking.bookingId})}" 
+                               class="btn btn-primary">리뷰 작성하기</a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 계정 관리 섹션 -->
+            <section class="account-management-section">
+                <h3>계정 관리</h3>
+                <div class="account-info-card">
+                    <div class="info-item">
+                        <label>아이디</label>
+                        <span th:text="${user.username}"></span>
+                    </div>
+                    
+                    <!-- 이름 변경 -->
+                    <div class="info-item">
+                        <label>이름</label>
+                        <form th:action="@{/customer/mypage/update-name}" method="post" class="inline-form">
+                            <input type="text" name="name" th:value="${user.name}" required>
+                            <button type="submit" class="btn btn-primary btn-sm">변경</button>
+                        </form>
+                    </div>
+                    
+                    <!-- 이메일 변경 -->
+                    <div class="info-item">
+                        <label>이메일</label>
+                        <form th:action="@{/customer/mypage/update-email}" method="post" class="inline-form">
+                            <input type="email" name="email" th:value="${user.email}" required>
+                            <button type="submit" class="btn btn-primary btn-sm">변경</button>
+                        </form>
+                    </div>
+                    
+                    <!-- 비밀번호 변경 -->
+                    <div class="info-item">
+                        <label>비밀번호</label>
+                        <form th:action="@{/customer/mypage/change-password}" method="post" class="password-form">
+                            <input type="password" name="currentPassword" placeholder="현재 비밀번호" required>
+                            <input type="password" name="newPassword" placeholder="새 비밀번호" required>
+                            <input type="password" name="confirmPassword" placeholder="새 비밀번호 확인" required>
+                            <button type="submit" class="btn btn-primary btn-sm">변경</button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="account-actions">
+                    <a th:href="@{/customer/mypage/payment-history}" class="btn btn-info">결제 내역</a>
+                    <form th:action="@{/logout}" method="post" style="display:inline-block; margin-right: 10px;">
+                        <button type="submit" class="btn btn-secondary">로그아웃</button>
+                    </form>
+                    <form th:action="@{/customer/mypage/delete-account}" method="post" style="display:inline-block;">
+                        <button type="submit" class="btn btn-danger" 
+                                onclick="return confirm('정말 회원탈퇴를 하시겠습니까? 탈퇴 후 복구할 수 없습니다.')">회원탈퇴</button>
+                    </form>
+                </div>
+            </section>
+        </div>
+    </div>
+    
+    <style>
+        .mypage-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .mypage-container section {
+            margin-bottom: 40px;
+            padding: 25px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        
+        .mypage-container h3 {
+            margin-bottom: 20px;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        
+        .bookings-summary {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .booking-summary-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .booking-header h4 {
+            margin: 0;
+            color: #007bff;
+            font-size: 18px;
+        }
+        
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-badge.status-pending {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .status-badge.status-confirmed {
+            background: #28a745;
+            color: white;
+        }
+        
+        .status-badge.status-checked_in {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        .status-badge.status-checked_out {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .status-badge.status-cancelled {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .booking-details-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .detail-item .label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .detail-item .value {
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .payment-completed {
+            color: #28a745;
+        }
+        
+        .payment-pending {
+            color: #ffc107;
+        }
+        
+        .payment-failed {
+            color: #dc3545;
+        }
+        
+        .payment-refunded {
+            color: #6c757d;
+        }
+        
+        .payment-none {
+            color: #999;
+        }
+        
+        .booking-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .bookings-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .booking-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .booking-card.past-booking {
+            opacity: 0.9;
+        }
+        
+        .booking-info {
+            flex: 1;
+        }
+        
+        .booking-info h4 {
+            margin: 0 0 10px 0;
+            color: #007bff;
+        }
+        
+        .booking-details p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .account-info-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .info-item {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .info-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        
+        .info-item label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .inline-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .inline-form input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .password-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .password-form input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 14px;
+        }
+        
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        .btn-info:hover {
+            background: #138496;
+        }
+        
+        .account-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+    </style>
+</body>
+</html>

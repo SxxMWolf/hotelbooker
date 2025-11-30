@@ -206,5 +206,169 @@ public class CustomerController {
         }
         return "redirect:/customer/bookings";
     }
+    
+    @GetMapping("/mypage")
+    public String myPage(Authentication authentication, Model model) {
+        User user = userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        
+        List<Booking> allBookings = bookingService.getUserBookings(user);
+        LocalDate today = LocalDate.now();
+        
+        // 현재 예약 (체크아웃 날짜가 오늘 이후인 예약 중 CONFIRMED, CHECKED_IN, PENDING 상태)
+        List<Booking> currentBookings = allBookings.stream()
+                .filter(b -> b.getCheckOutDate().isAfter(today) || b.getCheckOutDate().isEqual(today))
+                .filter(b -> b.getStatus() != Booking.BookingStatus.CANCELLED && 
+                            b.getStatus() != Booking.BookingStatus.CHECKED_OUT)
+                .toList();
+        
+        // 과거 예약 (체크아웃 날짜가 오늘 이전이거나 CANCELLED, CHECKED_OUT 상태)
+        List<Booking> pastBookings = allBookings.stream()
+                .filter(b -> b.getCheckOutDate().isBefore(today) || 
+                            b.getStatus() == Booking.BookingStatus.CANCELLED ||
+                            b.getStatus() == Booking.BookingStatus.CHECKED_OUT)
+                .toList();
+        
+        // 각 예약에 대한 결제 정보와 리뷰 작성 여부를 Map으로 저장
+        java.util.Map<Long, Payment> paymentMap = new java.util.HashMap<>();
+        java.util.Map<Long, Boolean> reviewMap = new java.util.HashMap<>();
+        
+        for (Booking booking : allBookings) {
+            // 결제 정보
+            paymentService.getPaymentByBookingId(booking.getBookingId())
+                    .ifPresent(payment -> paymentMap.put(booking.getBookingId(), payment));
+            
+            // 리뷰 작성 여부 확인 (체크아웃 완료된 예약만)
+            if (booking.getStatus() == Booking.BookingStatus.CHECKED_OUT) {
+                boolean hasReview = reviewService.hasReviewForBooking(booking.getBookingId(), user.getUserId());
+                reviewMap.put(booking.getBookingId(), hasReview);
+            }
+        }
+        
+        model.addAttribute("paymentMap", paymentMap);
+        model.addAttribute("reviewMap", reviewMap);
+        
+        model.addAttribute("user", user);
+        model.addAttribute("currentBookings", currentBookings);
+        model.addAttribute("pastBookings", pastBookings);
+        return "customer/mypage";
+    }
+    
+    @PostMapping("/mypage/update-name")
+    public String updateName(Authentication authentication,
+                            @RequestParam String name,
+                            RedirectAttributes redirectAttributes) {
+        try {
+            User user = userRepository.findByUsername(authentication.getName())
+                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+            user.setName(name);
+            userRepository.save(user);
+            redirectAttributes.addFlashAttribute("success", "이름이 변경되었습니다.");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/customer/mypage";
+    }
+    
+    @PostMapping("/mypage/update-email")
+    public String updateEmail(Authentication authentication,
+                             @RequestParam String email,
+                             RedirectAttributes redirectAttributes) {
+        try {
+            User user = userRepository.findByUsername(authentication.getName())
+                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+            
+            // 이메일 중복 확인
+            if (userRepository.existsByEmail(email) && !user.getEmail().equals(email)) {
+                redirectAttributes.addFlashAttribute("error", "이미 사용 중인 이메일입니다.");
+                return "redirect:/customer/mypage";
+            }
+            
+            user.setEmail(email);
+            userRepository.save(user);
+            redirectAttributes.addFlashAttribute("success", "이메일이 변경되었습니다.");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/customer/mypage";
+    }
+    
+    @PostMapping("/mypage/change-password")
+    public String changePassword(Authentication authentication,
+                                @RequestParam String currentPassword,
+                                @RequestParam String newPassword,
+                                @RequestParam String confirmPassword,
+                                RedirectAttributes redirectAttributes) {
+        try {
+            User user = userRepository.findByUsername(authentication.getName())
+                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+            
+            // 새 비밀번호 확인
+            if (!newPassword.equals(confirmPassword)) {
+                redirectAttributes.addFlashAttribute("error", "새 비밀번호가 일치하지 않습니다.");
+                return "redirect:/customer/mypage";
+            }
+            
+            // 현재 비밀번호 확인은 Spring Security의 PasswordEncoder를 사용
+            userService.changePassword(user, newPassword);
+            redirectAttributes.addFlashAttribute("success", "비밀번호가 변경되었습니다.");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/customer/mypage";
+    }
+    
+    @GetMapping("/mypage/payment-history")
+    public String paymentHistory(Authentication authentication, Model model) {
+        User user = userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        
+        List<Booking> allBookings = bookingService.getUserBookings(user);
+        java.util.List<java.util.Map<String, Object>> paymentHistory = new java.util.ArrayList<>();
+        
+        for (Booking booking : allBookings) {
+            paymentService.getPaymentByBookingId(booking.getBookingId()).ifPresent(payment -> {
+                java.util.Map<String, Object> paymentInfo = new java.util.HashMap<>();
+                paymentInfo.put("booking", booking);
+                paymentInfo.put("payment", payment);
+                paymentHistory.add(paymentInfo);
+            });
+        }
+        
+        model.addAttribute("paymentHistory", paymentHistory);
+        return "customer/payment-history";
+    }
+    
+    @PostMapping("/mypage/delete-account")
+    public String deleteAccount(Authentication authentication,
+                               RedirectAttributes redirectAttributes) {
+        try {
+            User user = userRepository.findByUsername(authentication.getName())
+                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+            
+            // 활성 예약이 있는지 확인
+            List<Booking> activeBookings = bookingService.getUserBookings(user).stream()
+                    .filter(b -> b.getStatus() != Booking.BookingStatus.CANCELLED && 
+                               b.getStatus() != Booking.BookingStatus.CHECKED_OUT)
+                    .filter(b -> b.getCheckOutDate().isAfter(LocalDate.now()) || 
+                               b.getCheckOutDate().isEqual(LocalDate.now()))
+                    .toList();
+            
+            if (!activeBookings.isEmpty()) {
+                redirectAttributes.addFlashAttribute("error", "활성 예약이 있어 회원탈퇴할 수 없습니다. 먼저 예약을 취소해주세요.");
+                return "redirect:/customer/mypage";
+            }
+            
+            // 계정 비활성화
+            user.setEnabled(false);
+            userRepository.save(user);
+            
+            redirectAttributes.addFlashAttribute("success", "회원탈퇴가 완료되었습니다.");
+            return "redirect:/logout";
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", "회원탈퇴 중 오류가 발생했습니다: " + e.getMessage());
+            return "redirect:/customer/mypage";
+        }
+    }
 }
 
